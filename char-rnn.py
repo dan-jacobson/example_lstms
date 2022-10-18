@@ -58,7 +58,10 @@ class RNN(nn.Module):
     def __init__(self, input_size, output_size, hidden_size, num_layers):
         super(RNN, self).__init__()
         self.embedding = nn.Embedding(input_size, input_size)
-        self.rnn = nn.LSTM(input_size=input_size, hidden_size=hidden_size, num_layers=num_layers)
+        self.rnn = nn.LSTM(input_size=input_size, 
+                            hidden_size=hidden_size, 
+                            num_layers=num_layers,
+                            dropout = .1)
         self.decoder = nn.Linear(hidden_size, output_size)
 
     def forward(self, input_seq, hidden_state):
@@ -102,13 +105,16 @@ def train():
             loss.backward()
             optimizer.step()
 
-        print(f'Epoch: {i} \t Loss: {running_loss/n:.8f}')
-        torch.save(rnn.state_dict(), save_path)
+        print(f'Epoch: {i} \t Loss: {running_loss/j:.8f}')
+        # torch.save(rnn.state_dict(), save_path)
 
         # generate a test sequence at the end of each epoch
 
         hidden_state = None
-        input_seq = np.random.choice(chars)
+
+        # sample a random character from the last batch as a seed
+        rand_index = np.random.randint(len(X)-1)
+        input_seq = X[rand_index:rand_index+1]
 
         for _ in range(eval_sample_length):
 
@@ -137,4 +143,3 @@ if __name__ == '__main__':
     print(f'Device found: {device}')
 
     train()
-    
