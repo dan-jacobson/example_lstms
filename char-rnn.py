@@ -76,7 +76,7 @@ def train():
                         batch_size=batch_size,
                         shuffle=True,
                         pin_memory=True,
-                        num_worker=8,
+                        num_workers=8,
                         drop_last=True)
 
     rnn = RNN(dataset.num_chars, dataset.num_chars, hidden_size, num_layers).to(device)
