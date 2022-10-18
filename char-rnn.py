@@ -52,25 +52,6 @@ class TextDataset(torch.utils.data.Dataset):
         # Fancy indexing to select every V rows.
         return array[sub_windows[::stride_size]]
 
-# def preprocess_data(txt_data_path: str) -> list[int]:
-#     with open(txt_data_path, 'r') as f:
-#         txt_data = f.read()
-
-#     chars = list(set(txt_data))
-
-#     num_chars = len(chars)
-#     txt_data_size = (len(txt_data))
-
-#     logger.info(f'Input dataset length: {txt_data_size} \t Unique characters: {num_chars}')
-
-#     char_to_int = dict((c, i ) for i, c in enumerate(chars))
-#     int_to_char = dict((v,k) for k,v in char_to_int.items())
-
-#     #TODO logging
-
-#     txt_data_encoded = [char_to_int[i] for i in txt_data]
-#     return txt_data_encoded, txt_data_size, chars, num_chars
-
 
 class RNN(nn.Module):
     def __init__(self, input_size, output_size, hidden_size, num_layers):
