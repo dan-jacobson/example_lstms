@@ -133,7 +133,7 @@ if __name__ == '__main__':
     load_chk = False #config.load_chk
     save_path = ".pretrained/test.pth" #config.save_path
     data_path = "data/shakespeare_input.txt" #config.data_path
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu") #config.device 
+    device = torch.device("mps" if torch.backends.mps.is_available() and torch.backends.mps.is_built() else "cpu") 
     print(f'Device found: {device}')
 
     train()
