@@ -1,6 +1,6 @@
 import logging
 import numpy as np
-import tqdm
+from tqdm import trange, tqdm
 
 import torch
 import torch.nn as nn
@@ -89,7 +89,7 @@ def train():
         running_loss = 0
         hidden_state = None
 
-        for i, (X,y) in enumerate(tqdm.tqdm(loader)):
+        for j, (X,y) in enumerate(tqdm(loader, desc='Batch')):
 
             X, y = X.to(device), y.to(device)
             output, hidden_state = rnn(X, hidden_state)
