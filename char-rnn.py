@@ -1,27 +1,75 @@
+import logging
 import numpy as np
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.utils.data import DataLoader
 from torch.distributions import Categorical
 
-def preprocess_data(txt_data_path: str) -> List[int]:
-    with open(txt_data_path), 'r') as f:
-        txt_data = f.read()
+class TextDataset(torch.utils.data.Dataset):
+    def __init__(self, data_path:str, seq_length:int=100, stride:int=1): 
+        'Initialization'
+        self.data_path = data_path
+        self.seq_length = seq_length
+        self.stride = stride
+        # load the dataset
+        with open(data_path, 'r') as f:
+            self.txt = f.read()
+        self.chars = list(set(self.txt))
+        self.num_chars = len(self.chars)
+        self.txt_size = len(self.txt)
+        
+        print(f'Input dataset length: {self.txt_size} \t Unique characters: {self.num_chars}')
 
-    chars = list(set(txt_data))
+        # build dictionaries to encode the txt
+        self.char_to_int = dict((c, i ) for i, c in enumerate(self.chars))
+        self.int_to_char = dict((v,k) for k,v in self.char_to_int.items())
+        # encode text 
+        self.data = np.array([self.char_to_int[i] for i in self.txt])
+        # build the training sequences (input shifted right 1 step) in a vectorized way
+        self.X = self.vectorized_stride(self.data, 0, self.seq_length, self.stride) 
+        self.y = self.vectorized_stride(self.data, 1, self.seq_length, self.stride)
 
-    num_chars = len(chars)
-    txt_data_size = (len(txt_data))
+    def __len__(self):
+        'Denotes the total number of samples'
+        return len(self.X)
+    
+    def __getitem__(self, idx):
+        'Generates one sample of data'
+        return torch.tensor(self.X[idx]), torch.tensor(self.y[idx])
 
-    #TODO logging
+    def vectorized_stride(self, array, start, sub_window_size, stride_size):
+        time_steps = len(array) - start
+        max_time = time_steps - time_steps % stride_size
+        
+        sub_windows = (
+            start + 
+            np.expand_dims(np.arange(sub_window_size), 0) +
+            np.expand_dims(np.arange(max_time), 0).T
+        )
+        
+        # Fancy indexing to select every V rows.
+        return array[sub_windows[::stride_size]]
 
-    char_to_int = dict((c, i ) for i, c in enumerate(chars))
-    int_to_char = dict((v,k) for k,v in char_to_int.items())
+# def preprocess_data(txt_data_path: str) -> list[int]:
+#     with open(txt_data_path, 'r') as f:
+#         txt_data = f.read()
 
-    #TODO logging
+#     chars = list(set(txt_data))
 
-    txt_data_encoded = [car_to_int[i] for i in txt_data]
-    return txt_data_encoded, txt_data_size, chars, num_chars
+#     num_chars = len(chars)
+#     txt_data_size = (len(txt_data))
+
+#     logger.info(f'Input dataset length: {txt_data_size} \t Unique characters: {num_chars}')
+
+#     char_to_int = dict((c, i ) for i, c in enumerate(chars))
+#     int_to_char = dict((v,k) for k,v in char_to_int.items())
+
+#     #TODO logging
+
+#     txt_data_encoded = [char_to_int[i] for i in txt_data]
+#     return txt_data_encoded, txt_data_size, chars, num_chars
 
 
 class RNN(nn.Module):
@@ -38,68 +86,48 @@ class RNN(nn.Module):
         return output, (hidden_state[0].detach(), hidden_state[1].detach())
 
 
-def train(config):
+def train():
     '''Function to train the RNN'''
-    hidden_size = 512 #config.hidden_size
-    seq_len = 100 #config.seq_len
-    num_layers = 3 #config.num_layers
-    lr = 0.002 #config.lr
-    epochs = 100 #config.epochs
-    eval_sample_length = 200 #config.eval_sample_length
-    load_chk = False #config.load_chk
-    save_path = ".pretrained/test.pth" #config.save_path
-    data_path = ".data/tbh.txt" #config.data_path
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu") #config.device
 
-    data, data_size, chars, chars_size = preprocess_data(data_path)
+    dataset = TextDataset(data_path, seq_length=100, stride=100)
+    loader = DataLoader(dataset,
+                        batch_size=batch_size,
+                        shuffle=True,
+                        pin_memory=True,
+                        drop_last=True)
 
-    # data tensor on device
-    data = torch.tensor(data).to(device)
-    data = torch.unsqueeze(data, dim=1)
-    
-    rnn = RNN(chars_size, chars_size, hidden_size).to(device)
+    rnn = RNN(dataset.num_chars, dataset.num_chars, hidden_size, num_layers).to(device)
 
     loss_fn = nn.CrossEntropyLoss()
-    optim = torch.optim.Adam(rnn.parameters, lr=lr)
+    optimizer = torch.optim.Adam(rnn.parameters(), lr=lr)
 
     for i in range(1, epochs+1):
 
-        start_idx = np.random.randint(100)
-        n = 0
         running_loss = 0
         hidden_state = None
 
-        while True:
-            input_seq = data[start_idx : start_idx + seq_len]
-            target_seq = data[start_idx + 1 : start_idx + seq_len + 1]
+        for i, (X,y) in enumerate(loader):
 
+            X, y = X.to(device), y.to(device)
+            output, hidden_state = rnn(X, hidden_state)
 
-            output, hidden_state = rnn(input_seq, hidden_state)
-
-            loss = loss_fn(torch.squeeze(output), torch.squeeze(target_seq))
+            # need to reshape output to (batch, n_classes, seq_length)
+            loss = loss_fn(output.reshape(batch_size,dataset.num_chars,seq_length), y)
             running_loss += loss.item()
 
             optimizer.zero_grad()
-            loss.backwards()
+            loss.backward()
             optimizer.step()
 
-            start_idx += seq_len
-            n += 1
-
-            if start_idx + seq_len +1 > data_size:
-                break
-
-        print(f"Epoch: {i} \t Loss: {running_loss/n:.8f}")
+        print(f'Epoch: {i} \t Loss: {running_loss/n:.8f}')
         torch.save(rnn.state_dict(), save_path)
 
         # generate a test sequence at the end of each epoch
 
-        start_idx = 0
         hidden_state = None
-
         input_seq = np.random.choice(chars)
 
-        while True:
+        for _ in range(eval_sample_length):
 
             output, hidden_state = rnn(input_seq, hidden_state)
 
@@ -107,13 +135,23 @@ def train(config):
             dist = Categorical(output)
             index = dist.sample()
 
-            print(idx_to_char[index.item()], end="")
+            print(dataset.idx_to_char[index.item()], end="")
 
             input_seq[0][0] = index.item()
-            start_idx += 1
 
-            if start_idx >= eval_sample_length:
-                break
+if __name__ == '__main__':
+    hidden_size = 512 #config.hidden_size
+    seq_length = 100 #config.seq_len
+    batch_size = 32 # config.batch_size
+    num_layers = 3 #config.num_layers
+    lr = 0.002 #config.lr
+    epochs = 100 #config.epochs
+    eval_sample_length = 200 #config.eval_sample_length
+    load_chk = False #config.load_chk
+    save_path = ".pretrained/test.pth" #config.save_path
+    data_path = "data/shakespeare_input.txt" #config.data_path
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu") #config.device 
+    print(f'Device found: {device}')
 
-if __name__ = '__main__":
     train()
+    
