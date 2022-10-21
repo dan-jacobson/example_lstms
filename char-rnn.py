@@ -138,6 +138,14 @@ def train_rnn():
             txt = ''.join(dataset.int_to_char[spl] for spl in sampled)
             print(f'----\n {txt} \n----')
 
+            if checkpoint_every and i % checkpoint_every == 0:
+            torch.save({'epoch': i,
+                        'model_state_dict': net.state_dict(),
+                        'optimizer_state_dict': optimizer.state_dict(),
+                        'loss': running_loss,
+                        'sample': txt
+                      } f = f'model_epoch_{i}.pt')
+
 if __name__ == '__main__':
 
     hidden_size = 512 #config.hidden_size
