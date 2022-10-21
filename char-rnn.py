@@ -1,4 +1,5 @@
 import logging
+import os
 import numpy as np
 from tqdm import trange, tqdm
 
@@ -9,49 +10,38 @@ from torch.utils.data import DataLoader
 from torch.distributions import Categorical
 
 class TextDataset(torch.utils.data.Dataset):
-    def __init__(self, data_path:str, seq_length:int=100, stride:int=1): 
+    def __init__(self, data_path:str, seq_length:int=100): 
         'Initialization'
         self.data_path = data_path
         self.seq_length = seq_length
-        self.stride = stride
         # load the dataset
         with open(data_path, 'r') as f:
-            self.txt = f.read()
-        self.chars = list(set(self.txt))
+            txt = f.read()
+        self.chars = sorted(list(set(txt)))
+        self.txt_size = len(txt)
         self.num_chars = len(self.chars)
-        self.txt_size = len(self.txt)
+        
         
         print(f'Input dataset length: {self.txt_size} \t Unique characters: {self.num_chars}')
 
         # build dictionaries to encode the txt
-        self.char_to_int = dict((c, i ) for i, c in enumerate(self.chars))
-        self.int_to_char = dict((v,k) for k,v in self.char_to_int.items())
+        self.char_to_int = {ch:i for i,ch in enumerate(self.chars)}
+        self.int_to_char = {i:ch for i,ch in enumerate(self.chars)}
         # encode text 
-        self.data = np.array([self.char_to_int[i] for i in self.txt])
-        # build the training sequences (input shifted right 1 step) in a vectorized way
-        self.X = self.vectorized_stride(self.data, 0, self.seq_length, self.stride) 
-        self.y = self.vectorized_stride(self.data, 1, self.seq_length, self.stride)
+        data = [self.char_to_int[ch] for ch in txt]
+        self.data = torch.tensor(data)
 
     def __len__(self):
-        'Denotes the total number of samples'
-        return len(self.X)
+        """Denotes the total number of samples. It's the lenght of our data
+        minus our sequence length, minus 1 because of 0-indexing, minus 1
+        because our target sequence is 1 longer then our input sequence"""
+        return len(self.data) - self.seq_length - 2
     
     def __getitem__(self, idx):
         'Generates one sample of data'
-        return torch.tensor(self.X[idx]), torch.tensor(self.y[idx])
-
-    def vectorized_stride(self, array, start, sub_window_size, stride_size):
-        time_steps = len(array) - start
-        max_time = time_steps - time_steps % stride_size
-        
-        sub_windows = (
-            start + 
-            np.expand_dims(np.arange(sub_window_size), 0) +
-            np.expand_dims(np.arange(max_time), 0).T
-        )
-        
-        # Fancy indexing to select every V rows.
-        return array[sub_windows[::stride_size]]
+        X = self.data[idx : idx+self.seq_length]
+        y = self.data[idx+1 : idx+self.seq_length+1]
+        return X, y
 
 
 class RNN(nn.Module):
@@ -61,7 +51,8 @@ class RNN(nn.Module):
         self.rnn = nn.LSTM(input_size=input_size, 
                             hidden_size=hidden_size, 
                             num_layers=num_layers,
-                            dropout = .1)
+                            dropout = .1,
+                            )
         self.decoder = nn.Linear(hidden_size, output_size)
 
     def forward(self, input_seq, hidden_state):
