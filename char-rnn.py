@@ -85,9 +85,9 @@ def train_rnn():
 
         for j, (X,y) in enumerate(tqdm(loader, desc='Batch')):
 
-          # if we don't want to iterate through the whole dataset every epoch
-          if iters_per_epoch >= j * batch_size:
-            break
+            # if we don't want to iterate through the whole dataset every epoch
+            if iters_per_epoch >= j * batch_size:
+                break
             
             X, y = X.to(device), y.to(device)
 
@@ -139,29 +139,33 @@ def train_rnn():
             print(f'----\n {txt} \n----')
 
             if checkpoint_every and i % checkpoint_every == 0:
-            torch.save({'epoch': i,
+                save_path = f'model_epoch_{i}.pt'
+                torch.save({'epoch': i,
                         'model_state_dict': net.state_dict(),
                         'optimizer_state_dict': optimizer.state_dict(),
                         'loss': running_loss,
                         'sample': txt
-                      } f = f'model_epoch_{i}.pt')
+                        }, f = save_path)
 
 if __name__ == '__main__':
 
-    hidden_size = 512 #config.hidden_size
-    seq_length = 25 #config.seq_len
-    batch_size = 64 # config.batch_size
-    num_layers = 3 #config.num_layers
-    lr = 0.0001 #config.lr
-    max_norm = 1
-    epochs = 100 #config.epochs
-    eval_sample_length = 200 #config.eval_sample_length
-    load_chk = False #config.load_chk
-    data_path = "data/shakespeare_input.txt" #config.data_path
-    device = torch.device("mps" if torch.backends.mps.is_available() and torch.backends.mps.is_built() else "cpu") 
-    # if device == 'mps':
-    #     os.environ['PYTORCH_ENABLE_MPS_FALLBACK'] = 1
-    device = torch.device('cpu')
+    hidden_size = 512
+    seq_length = 100
+    batch_size = 64
+    num_layers = 3
+    lr = 0.002
+    eval_sample_length = 200
+    epochs = 20
+    iters_per_epoch = 20000
+    checkpoint_every = 5
+    load_chk = False
+    data_path = "shakespeare_input.txt"
+    device = torch.device("mps" if torch.backends.mps.is_available() and torch.backends.mps.is_built() 
+                            else "cuda" if torch.cuda.is_available() 
+                            else "cpu") 
+    if device == 'mps':
+        os.environ['PYTORCH_ENABLE_MPS_FALLBACK'] = 1
+    # device = torch.device('cpu')
     print(f'Device found: {device}')
 
-    train()
+    train_rnn()
