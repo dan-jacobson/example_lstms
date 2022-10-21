@@ -52,6 +52,7 @@ class RNN(nn.Module):
                             hidden_size=hidden_size, 
                             num_layers=num_layers,
                             dropout = .1,
+                            batch_first=True
                             )
         self.decoder = nn.Linear(hidden_size, output_size)
 
@@ -62,15 +63,14 @@ class RNN(nn.Module):
         return output, (hidden_state[0].detach(), hidden_state[1].detach())
 
 
-def train():
+def train_rnn():
     '''Function to train the RNN'''
 
-    dataset = TextDataset(data_path, seq_length=100, stride=100)
+    dataset = TextDataset(data_path, seq_length=100)
     loader = DataLoader(dataset,
                         batch_size=batch_size,
                         shuffle=True,
-                        pin_memory=True,
-                        num_workers=8,
+                        num_workers=4,
                         drop_last=True)
 
     rnn = RNN(dataset.num_chars, dataset.num_chars, hidden_size, num_layers).to(device)
@@ -80,57 +80,80 @@ def train():
 
     for i in range(1, epochs+1):
 
+        rnn.train()
         running_loss = 0
-        hidden_state = None
 
         for j, (X,y) in enumerate(tqdm(loader, desc='Batch')):
 
+          # if we don't want to iterate through the whole dataset every epoch
+          if iters_per_epoch >= j * batch_size:
+            break
+            
             X, y = X.to(device), y.to(device)
-            output, hidden_state = rnn(X, hidden_state)
+
+            # our dataloader shuffles the data, so we pass None to hidden_state each batch
+            output, hidden_state = rnn(X, None)
 
             # need to reshape output to (batch, n_classes, seq_length)
-            loss = loss_fn(output.reshape(batch_size,dataset.num_chars,seq_length), y)
-            running_loss += loss.item()
+            loss = loss_fn(torch.permute(output, (0,2,1)), y)
 
+            running_loss += loss.item()
             optimizer.zero_grad()
             loss.backward()
+            
+            # option to clip gradients if the LSTM is collapsing
+            if max_norm:
+                norm = torch.nn.utils.clip_grad_norm_(rnn.parameters(), 
+                                                max_norm=max_norm,
+                                                error_if_nonfinite=True)
             optimizer.step()
 
         print(f'Epoch: {i} \t Loss: {running_loss/j:.8f}')
-        # torch.save(rnn.state_dict(), save_path)
 
         # generate a test sequence at the end of each epoch
+        rnn.eval()
+        with torch.no_grad():
 
-        hidden_state = None
+            hidden_state = None
+            sampled = []
 
-        # sample a random character from the last batch as a seed
-        rand_index = np.random.randint(len(X)-1)
-        input_seq = X[rand_index:rand_index+1]
+            # sample a random character from the char list as a seed
+            rand_char = dataset.char_to_int[np.random.choice(dataset.chars)]
+            input_seq = torch.tensor([rand_char]).to(device)
+            input_seq = torch.unsqueeze(input_seq, dim=1)
+            
+            for _ in range(eval_sample_length):
 
-        for _ in range(eval_sample_length):
+                output, hidden_state = rnn(input_seq, hidden_state)
 
-            output, hidden_state = rnn(input_seq, hidden_state)
+                output = F.softmax(torch.squeeze(output), dim=0)
+                dist = Categorical(output)
+                index = dist.sample()
 
-            output = F.softmax(torch.squeeze(output), dim=0)
-            dist = Categorical(output)
-            index = dist.sample()
+                # write it out
+                sampled.append(index.item())
+                # feed it back in
+                input_seq[0][0] = index.item()
 
-            print(dataset.idx_to_char[index.item()], end="")
-
-            input_seq[0][0] = index.item()
+            txt = ''.join(dataset.int_to_char[spl] for spl in sampled)
+            print(f'----\n {txt} \n----')
 
 if __name__ == '__main__':
+
     hidden_size = 512 #config.hidden_size
-    seq_length = 100 #config.seq_len
-    batch_size = 32 # config.batch_size
+    seq_length = 25 #config.seq_len
+    batch_size = 64 # config.batch_size
     num_layers = 3 #config.num_layers
-    lr = 0.002 #config.lr
+    lr = 0.0001 #config.lr
+    max_norm = 1
     epochs = 100 #config.epochs
     eval_sample_length = 200 #config.eval_sample_length
     load_chk = False #config.load_chk
-    save_path = ".pretrained/test.pth" #config.save_path
     data_path = "data/shakespeare_input.txt" #config.data_path
     device = torch.device("mps" if torch.backends.mps.is_available() and torch.backends.mps.is_built() else "cpu") 
+    # if device == 'mps':
+    #     os.environ['PYTORCH_ENABLE_MPS_FALLBACK'] = 1
+    device = torch.device('cpu')
     print(f'Device found: {device}')
 
     train()
