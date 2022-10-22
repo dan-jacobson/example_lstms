@@ -17,12 +17,10 @@ class TextDataset(torch.utils.data.Dataset):
         # load the dataset
         with open(data_path, 'r') as f:
             txt = f.read()
-        self.chars = sorted(list(set(txt)))
-        self.txt_size = len(txt)
-        self.num_chars = len(self.chars)
-        
-        
-        print(f'Input dataset length: {self.txt_size} \t Unique characters: {self.num_chars}')
+        self.chars = list(set(txt))
+        self.data_size = len(txt)
+        self.vocab_size = len(self.chars)
+        print(f'Input dataset length: {self.data_size} \t Unique characters: {self.vocab_size}')
 
         # build dictionaries to encode the txt
         self.char_to_int = {ch:i for i,ch in enumerate(self.chars)}
@@ -70,10 +68,10 @@ def train_rnn():
     loader = DataLoader(dataset,
                         batch_size=batch_size,
                         shuffle=True,
-                        num_workers=4,
+                        num_workers=8,
                         drop_last=True)
 
-    rnn = RNN(dataset.num_chars, dataset.num_chars, hidden_size, num_layers).to(device)
+    rnn = RNN(dataset.vocab_size, dataset.vocab_size, hidden_size, num_layers).to(device)
 
     loss_fn = nn.CrossEntropyLoss()
     optimizer = torch.optim.Adam(rnn.parameters(), lr=lr)
@@ -83,11 +81,12 @@ def train_rnn():
         rnn.train()
         running_loss = 0
 
-        for j, (X,y) in enumerate(tqdm(loader, desc='Batch')):
+        # if we don't want to iterate through the whole dataset every epoch
+        total = iters_per_epoch // batch_size if iters_per_epoch else len(loader)
 
-            # if we don't want to iterate through the whole dataset every epoch
-            if iters_per_epoch >= j * batch_size:
-                break
+        for j, (X,y) in enumerate(tqdm(loader, total=total, desc='Batch')):
+
+            if j == total: break  
             
             X, y = X.to(device), y.to(device)
 
@@ -139,9 +138,9 @@ def train_rnn():
             print(f'----\n {txt} \n----')
 
             if checkpoint_every and i % checkpoint_every == 0:
-                save_path = f'model_epoch_{i}.pt'
+                save_path = f'{checkpoint_dir}/model_epoch_{i}.pt'
                 torch.save({'epoch': i,
-                        'model_state_dict': net.state_dict(),
+                        'model_state_dict': rnn.state_dict(),
                         'optimizer_state_dict': optimizer.state_dict(),
                         'loss': running_loss,
                         'sample': txt
@@ -153,19 +152,19 @@ if __name__ == '__main__':
     seq_length = 100
     batch_size = 64
     num_layers = 3
-    lr = 0.002
+    lr = 1e-2
+    max_norm = None
     eval_sample_length = 200
-    epochs = 20
-    iters_per_epoch = 20000
-    checkpoint_every = 5
+    epochs = 200
+    iters_per_epoch = 10000
+    checkpoint_every = 2
+    checkpoint_dir = 'checkpoints'
     load_chk = False
-    data_path = "shakespeare_input.txt"
+    data_path = "data/shakespeare_input.txt"
     device = torch.device("mps" if torch.backends.mps.is_available() and torch.backends.mps.is_built() 
                             else "cuda" if torch.cuda.is_available() 
-                            else "cpu") 
-    if device == 'mps':
-        os.environ['PYTORCH_ENABLE_MPS_FALLBACK'] = 1
-    # device = torch.device('cpu')
+                            else "cpu")                        
+    device = torch.device('cpu')
     print(f'Device found: {device}')
 
     train_rnn()
