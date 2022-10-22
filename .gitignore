@@ -1,2 +1,5 @@
 .conda_config
 data/
+example_notebooks/
+checkpoints/
+__pycache__/
